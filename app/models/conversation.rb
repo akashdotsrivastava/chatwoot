@@ -54,7 +54,7 @@ class Conversation < ApplicationRecord
   # wanted to change this to after_update commit. But it ended up creating a loop
   # reinvestigate in future and identity the implications
   after_update :notify_status_change, :create_activity
-  after_create_commit :notify_conversation_creation, :queue_conversation_auto_resolution_job
+  after_create_commit :notify_conversation_creation
   after_save :run_round_robin
 
   acts_as_taggable_on :labels
@@ -145,12 +145,6 @@ class Conversation < ApplicationRecord
     dispatcher_dispatch(CONVERSATION_CREATED)
   end
 
-  def queue_conversation_auto_resolution_job
-    return unless auto_resolve_duration
-
-    AutoResolveConversationsJob.set(wait_until: (last_activity_at || created_at) + auto_resolve_duration.days).perform_later(id)
-  end
-
   def self_assign?(assignee_id)
     assignee_id.present? && Current.user&.id == assignee_id
   end
@@ -165,10 +159,7 @@ class Conversation < ApplicationRecord
   def create_activity
     user_name = Current.user&.available_name
 
-    if saved_change_to_status?
-      create_status_change_message(user_name)
-      queue_conversation_auto_resolution_job if open?
-    end
+    create_status_change_message(user_name) if saved_change_to_status?
     create_assignee_change(user_name) if saved_change_to_assignee_id?
     create_label_change(user_name) if saved_change_to_label_list?
   end
